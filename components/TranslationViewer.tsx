@@ -303,23 +303,34 @@ export const TranslationViewer: React.FC<TranslationViewerProps> = ({ pages, onD
                 </div>
                 <h3 className="text-xl font-bold text-gray-900 mb-2">Translation Failed</h3>
                 <p className="text-gray-600 mb-6 max-w-md">
-                  We encountered an error processing this page. It might be due to complex layout or connection issues.
+                  We encountered an error processing this page.
                 </p>
+                
                 {activePage.errorMessage && (
-                   <div className="mb-6 p-3 bg-gray-100 rounded text-xs text-left w-full max-w-md overflow-auto max-h-32 font-mono text-gray-700">
+                   <div className="mb-6 p-3 bg-gray-100 rounded text-xs text-left w-full max-w-md overflow-auto max-h-32 font-mono text-gray-700 break-words border border-gray-200">
                       {activePage.errorMessage}
                    </div>
                 )}
+                
+                {/* Smart Error Tips */}
+                {activePage.errorMessage?.includes('401') && (
+                    <p className="text-red-600 font-medium mb-4 text-sm bg-red-50 p-2 rounded">
+                        Tip: Your API Key or Token is invalid/expired.<br/>Please check the <strong>Settings</strong>.
+                    </p>
+                )}
+                {activePage.errorMessage?.includes('404') && (
+                    <p className="text-red-600 font-medium mb-4 text-sm bg-red-50 p-2 rounded">
+                        Tip: The API URL seems incorrect.<br/>Please check the <strong>Settings</strong>.
+                    </p>
+                )}
+
                 <button 
                   onClick={() => {
-                     // We need a way to trigger retry from here. 
-                     // Since retry logic is in App.tsx, ideally we pass a retry handler.
-                     // For now, we display the error clearly.
-                     alert("Please try reloading the document or re-uploading.");
+                     alert("Please open Settings (Gear Icon top right) to fix your API Key or URL, then re-upload the document.");
                   }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors shadow-sm"
                 >
-                  Retry Document
+                  Resolve Issue
                 </button>
               </div>
             ) : (
