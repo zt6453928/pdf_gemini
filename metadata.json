@@ -1,0 +1,5 @@
+{
+  "name": "PDF Translate Pro",
+  "description": "A professional tool to translate PDF documents into Chinese while preserving structural layout using Gemini AI.",
+  "requestFramePermissions": []
+}
