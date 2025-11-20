@@ -2,7 +2,82 @@ import { ApiConfig } from "../types";
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-export const translatePageContent = async (base64Image: string, config: ApiConfig): Promise<string> => {
+export const translatePageContent = async (
+  base64Image: string, 
+  textData: string | null,
+  config: ApiConfig
+): Promise<string> => {
+  
+  if (config.provider === 'deeplx') {
+    return translateWithDeepLX(textData || '', config);
+  } else {
+    return translateWithOpenAI(base64Image, config);
+  }
+};
+
+const translateWithDeepLX = async (text: string, config: ApiConfig): Promise<string> => {
+  if (!text || text.trim().length === 0) {
+    return "<p><i>(No text content found on this page)</i></p>";
+  }
+
+  const MAX_RETRIES = 3;
+  let lastError: any;
+
+  // Default DeepLX endpoint if not provided
+  const endpoint = config.baseUrl || 'http://localhost:1188/translate';
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // Add Authorization header if apiKey is provided (custom DeepLX instances)
+          ...(config.apiKey ? { 'Authorization': `Bearer ${config.apiKey}` } : {})
+        },
+        body: JSON.stringify({
+          text: text,
+          source_lang: "auto",
+          target_lang: "ZH"
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`DeepLX Error ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      // DeepLX usually returns { code: 200, data: "translated text" }
+      // or sometimes just { data: "..." } or { alternatives: [...] }
+      const translatedText = data.data || data.text || (data.alternatives && data.alternatives[0]);
+
+      if (!translatedText) {
+        throw new Error("Invalid response format from DeepLX");
+      }
+
+      // Wrap in simple HTML for the viewer
+      return `
+        <div class="deeplx-translation" style="font-family: sans-serif; line-height: 1.6;">
+          <h3 style="color: #666; border-bottom: 1px solid #eee; padding-bottom: 8px; margin-bottom: 16px; font-size: 0.9em;">
+            Translated by DeepLX (Text Only)
+          </h3>
+          <p>${translatedText.replace(/\n/g, '<br/>')}</p>
+        </div>
+      `;
+
+    } catch (error) {
+      console.warn(`DeepLX attempt ${attempt} failed:`, error);
+      lastError = error;
+      if (attempt < MAX_RETRIES) {
+         await delay(1000 * attempt);
+      }
+    }
+  }
+  throw lastError;
+};
+
+const translateWithOpenAI = async (base64Image: string, config: ApiConfig): Promise<string> => {
   const MAX_RETRIES = 3;
   let lastError: any;
 
@@ -12,9 +87,7 @@ export const translatePageContent = async (base64Image: string, config: ApiConfi
   }
 
   try {
-    // Clean the base64 string if it has the prefix (OpenAI API usually accepts data URLs, 
-    // but sometimes raw base64 depending on the proxy. We will construct a standard data URL)
-    // Ensure we have a valid data URL prefix
+    // Clean the base64 string if it has the prefix
     let imageUrl = base64Image;
     if (!base64Image.startsWith('data:')) {
       imageUrl = `data:image/jpeg;base64,${base64Image}`;
@@ -57,28 +130,15 @@ export const translatePageContent = async (base64Image: string, config: ApiConfi
     `;
 
     // Smart URL Construction Logic
-    // This handles cases where users paste root domains (e.g. https://529961.com) 
-    // and ensures we target the correct OpenAI-compatible endpoint (/v1/chat/completions).
-    
     let url = config.baseUrl.trim();
-    // Remove trailing slash
-    if (url.endsWith('/')) {
-      url = url.slice(0, -1);
-    }
+    if (url.endsWith('/')) url = url.slice(0, -1);
 
     let endpoint = url;
-    
-    // If it's a full URL to the endpoint, use it.
     if (url.endsWith('/chat/completions')) {
         endpoint = url;
-    } 
-    // If it ends in /v1, append the chat path
-    else if (url.endsWith('/v1')) {
+    } else if (url.endsWith('/v1')) {
         endpoint = `${url}/chat/completions`;
-    } 
-    // Otherwise, assume it's a root base URL and append standard OpenAI version + path
-    // This specifically fixes the issue for providers like 529961.com
-    else {
+    } else {
         endpoint = `${url}/v1/chat/completions`;
     }
 
@@ -114,30 +174,22 @@ export const translatePageContent = async (base64Image: string, config: ApiConfi
           })
         });
 
-        // 1. Check response status
         if (!response.ok) {
           const status = response.status;
           const errorText = await response.text();
-          
           let detailedMsg = errorText;
           try {
             const json = JSON.parse(errorText);
-            // Extract useful message from common provider formats (Standard OpenAI or Proxies)
             detailedMsg = json.error?.message || json.message || JSON.stringify(json);
           } catch (e) { 
-            // Keep raw text if not JSON (e.g. HTML error pages)
             detailedMsg = errorText.substring(0, 300);
           }
-
-          // Create specific error to be caught below
           const errorMessage = `API Error ${status}: ${detailedMsg}`;
           const error = new Error(errorMessage);
           (error as any).status = status;
           throw error;
         }
 
-        // 2. Check Content-Type before parsing JSON
-        // This catches the "Unexpected token <" error when a 200 OK response returns HTML (e.g., some proxies or login pages)
         const contentType = response.headers.get("content-type");
         if (!contentType || !contentType.includes("application/json")) {
            const text = await response.text();
@@ -154,10 +206,8 @@ export const translatePageContent = async (base64Image: string, config: ApiConfi
             throw new Error("Empty response from API. The model might not support image inputs or the prompt.");
         }
 
-        // Cleanup if the model ignores instructions and adds markdown blocks
         text = text.replace(/^```html\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
         
-        // FIX: Unescape common formatting tags that might have been escaped by the model.
         text = text
           .replace(/&lt;(sup|sub|b|i|strong|em)&gt;/gi, '<$1>')
           .replace(/&lt;\/(sup|sub|b|i|strong|em)&gt;/gi, '</$1>');
@@ -166,30 +216,19 @@ export const translatePageContent = async (base64Image: string, config: ApiConfi
 
       } catch (error: any) {
         console.warn(`Attempt ${attempt} failed:`, error);
-        
-        // CRITICAL: Abort retries immediately on Authentication/Configuration errors
         const status = error.status;
-        
-        // 401: Unauthorized (Invalid API Key)
-        // 403: Forbidden (Insufficient Quota or Access)
-        // 404: Not Found (Invalid URL Endpoint)
-        // 400: Bad Request (Invalid Model or Parameters)
         if (status === 401 || status === 403 || status === 404 || status === 400) {
-            throw error; // Do not retry, fail immediately
+            throw error;
         }
-
         lastError = error;
         if (attempt < MAX_RETRIES) {
-          // Exponential backoff: 1s, 2s, 4s...
           await delay(1000 * Math.pow(2, attempt - 1));
         }
       }
     }
-
     throw lastError;
-
   } catch (error) {
     console.error("Translation Error:", error);
-    throw error; // Propagate error to the UI
+    throw error;
   }
 };

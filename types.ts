@@ -8,7 +8,7 @@ export enum AppState {
 export interface TranslatedPage {
   pageNumber: number;
   originalImage: string; // Base64
-  translatedHtml: string; // HTML string from Gemini
+  translatedHtml: string; // HTML string from Gemini/DeepLX
   status: 'pending' | 'translating' | 'completed' | 'error';
   errorMessage?: string;
 }
@@ -18,8 +18,11 @@ export interface TranslationStats {
   totalPages: number;
 }
 
+export type ApiProvider = 'openai' | 'deeplx';
+
 export interface ApiConfig {
+  provider: ApiProvider;
   baseUrl: string;
   apiKey: string;
-  modelName: string;
+  modelName: string; // Used for OpenAI
 }

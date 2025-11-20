@@ -46,6 +46,17 @@ export const renderPageToImage = async (pdf: pdfjsLib.PDFDocumentProxy, pageNum:
   return base64;
 };
 
+export const extractPageText = async (pdf: pdfjsLib.PDFDocumentProxy, pageNum: number): Promise<string> => {
+  const page = await pdf.getPage(pageNum);
+  const textContent = await page.getTextContent();
+  
+  // Basic text extraction joining items with space
+  // This loses structural layout but provides the raw content for DeepLX
+  return textContent.items
+    .map((item: any) => item.str)
+    .join(' ');
+};
+
 export const getTotalPages = (pdf: pdfjsLib.PDFDocumentProxy): number => {
   return pdf.numPages;
 };
